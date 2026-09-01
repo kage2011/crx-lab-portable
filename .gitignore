@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.vinext/
+.wrangler/
+dist/
+next-env.d.ts
+*.log
+.env*
+!.env.example

@@ -1,0 +1,5 @@
+CRX-20iA/L visual meshes are sourced from:
+https://github.com/FANUC-CORPORATION/fanuc_description
+
+Copyright 2025-2026 FANUC America Corporation and FANUC CORPORATION.
+SPDX-License-Identifier: Apache-2.0
