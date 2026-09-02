@@ -119,7 +119,7 @@ export default function V2Viewport(props: Props) {
     const work = new THREE.Mesh(workGeometry, new THREE.MeshStandardMaterial({ color: '#e7ece9', roughness: .75 }));
     if (ws.shape === 'cylinder') work.rotation[ws.axis === 'x' ? 'z' : 'x'] = Math.PI / 2;
     const workHalfHeight = (ws.shape === 'cylinder' ? ws.diameterMm : ws.heightMm) / 2000;
-    work.position.set(.75, latest.current.workHeightMm / 1000 + workHalfHeight, .35);
+    work.position.set(0, latest.current.workHeightMm / 1000 + workHalfHeight, 0);
     work.castShadow = true;
     scene.add(work);
 
