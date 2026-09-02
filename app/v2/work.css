@@ -171,3 +171,89 @@
   border-color: #e2a900;
   background: #fff2c9;
 }
+
+.v2-program {
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid #b8c9c3;
+  background: #e5eeea;
+}
+
+.v2-program > label {
+  display: grid;
+  grid-template-columns: 120px 1fr 70px;
+  align-items: center;
+  gap: 8px;
+  color: #43565c;
+  font: 9px monospace;
+}
+
+.v2-program > label > input {
+  width: 100%;
+  accent-color: #12a98f;
+}
+
+.v2-override-number {
+  display: flex;
+  align-items: center;
+  border: 1px solid #afc0ba;
+  background: #fff;
+}
+
+.v2-override-number input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: 10px monospace;
+}
+
+.v2-override-number small { padding-right: 5px; }
+
+.v2-program-time {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin: 10px 0 7px;
+}
+
+.v2-program-time span {
+  padding: 7px;
+  background: #fff;
+}
+
+.v2-program-time small,
+.v2-program-time b { display: block; }
+.v2-program-time small { color: #72837f; font-size: 7px; }
+.v2-program-time b { margin-top: 3px; font: bold 11px monospace; }
+
+.v2-program-buttons {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 5px;
+}
+
+.v2-program-buttons button {
+  padding: 9px;
+  border: 1px solid #718781;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.v2-program-buttons .play { background: #ffd449; border-color: #c9a617; }
+.v2-program-buttons .stop { background: #fff; }
+.v2-program-buttons button:disabled { cursor: not-allowed; opacity: .45; }
+
+.v2-points div > button:first-child {
+  flex-direction: column;
+  gap: 3px;
+}
+
+.v2-points div > button:first-child small {
+  color: #64777c;
+  font: 7px monospace;
+}
+
+.v2-points div.legacy { border-left: 3px solid #d6a82d; }

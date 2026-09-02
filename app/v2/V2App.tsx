@@ -46,8 +46,16 @@ export default function V2App() {
   const [collisions, setCollisions] = useState<string[]>([]);
   const [cad, setCad] = useState<CadSettings | null>(null);
   const [toast, setToast] = useState('');
+  const [overridePercent, setOverridePercent] = useState(25);
+  const [playing, setPlaying] = useState(false);
+  const [playStep, setPlayStep] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [plannedSec, setPlannedSec] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const layoutRef = useRef<HTMLInputElement>(null);
+  const animationRef = useRef<number | null>(null);
+  const overrideRef = useRef(overridePercent);
+  overrideRef.current = overridePercent;
   const model = ROBOTS.find(item => item.id === modelId) || ROBOTS[1];
   const layout: SavedLayout = { modelId, tool, work, workHeightMm, basePosition, teachPoints };
   const jointLimits = angles.map((angle, index) => {
@@ -66,6 +74,7 @@ export default function V2App() {
 
   useEffect(() => { localStorage.setItem('crx-v2-layout', JSON.stringify(layout)); }, [modelId, tool, work, workHeightMm, basePosition, teachPoints]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 2400); return () => clearTimeout(timer); }, [toast]);
+  useEffect(() => () => { if (animationRef.current !== null) cancelAnimationFrame(animationRef.current); }, []);
 
   const setToolValue = (key: keyof ToolSettings, value: number) => setTool(current => ({ ...current, [key]: value }));
   const setWorkValue = <K extends keyof WorkSettings>(key: K, value: WorkSettings[K]) => setWork(current => ({ ...current, [key]: value }));
@@ -77,13 +86,73 @@ export default function V2App() {
     const next: Pose & { nonce: number } = { ...pose, position: pose.position.map((value, i) => i === mappedIndex ? valueMm / 1000 : value) as Vec3Tuple, nonce: Date.now() };
     setPoseCommand(next);
   };
-  const addPoint = () => setTeachPoints(points => [...points, { ...pose, id: crypto.randomUUID(), name: `P${String(points.length + 1).padStart(2, '0')}` }]);
+  const addPoint = () => setTeachPoints(points => [...points, { ...pose, angles: [...angles], modelId, id: crypto.randomUUID(), name: `P${String(points.length + 1).padStart(2, '0')}` }]);
   const moveJoint = (index: number, value: number) => {
     const next = angles.map((angle, i) => i === index ? Math.min(model.upper[i], Math.max(model.lower[i], value)) : angle);
     setAngles(next);
     setJointCommand({ angles: next, nonce: Date.now() + Math.random() });
   };
-  const recall = (point: TeachPoint) => setPoseCommand({ position: point.position, quaternion: point.quaternion, nonce: Date.now() });
+  const recall = (point: TeachPoint) => {
+    if (point.angles?.length === 6 && (!point.modelId || point.modelId === modelId)) {
+      setJointCommand({ angles: [...point.angles], nonce: Date.now() });
+      return;
+    }
+    setPoseCommand({ position: point.position, quaternion: point.quaternion, nonce: Date.now() });
+  };
+  const segmentBaseSeconds = (from: number[], to: number[]) => Math.max(.12, Math.max(...to.map((value, index) => Math.abs(value - from[index]) / model.velocity[index])) * 1.5);
+  const playablePoints = teachPoints.filter(point => point.angles?.length === 6 && (!point.modelId || point.modelId === modelId));
+  const estimateProgramSeconds = (startAngles: number[], speedPercent: number) => {
+    let previous = startAngles;
+    let total = 0;
+    for (const point of playablePoints) {
+      total += segmentBaseSeconds(previous, point.angles!) / (speedPercent / 100);
+      previous = point.angles!;
+    }
+    return total;
+  };
+  const pointEstimatedSeconds = (point: TeachPoint) => {
+    const index = playablePoints.indexOf(point);
+    if (index < 0 || !point.angles) return null;
+    const previous = index === 0 ? angles : playablePoints[index - 1].angles!;
+    return segmentBaseSeconds(previous, point.angles) / (overridePercent / 100);
+  };
+  const stopProgram = () => {
+    if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
+    animationRef.current = null;
+    setPlaying(false);
+  };
+  const playProgram = () => {
+    stopProgram();
+    if (playablePoints.length === 0) { setToast('軸角度を保存した教示点がありません'); return; }
+    const points = playablePoints.map(point => ({ ...point, angles: [...point.angles!] }));
+    let from = [...angles];
+    let segmentIndex = 0;
+    let progress = 0;
+    let lastTime = performance.now();
+    const programStart = lastTime;
+    setPlannedSec(estimateProgramSeconds(from, overrideRef.current));
+    setElapsedSec(0); setPlayStep(1); setPlaying(true);
+    const frame = (now: number) => {
+      const targetAngles = points[segmentIndex].angles;
+      const baseSeconds = segmentBaseSeconds(from, targetAngles);
+      progress = Math.min(1, progress + ((now - lastTime) / 1000) * (overrideRef.current / 100) / baseSeconds);
+      lastTime = now;
+      const eased = progress * progress * (3 - 2 * progress);
+      const next = from.map((value, index) => value + (targetAngles[index] - value) * eased);
+      setAngles(next);
+      setJointCommand({ angles: next, nonce: now + Math.random() });
+      setElapsedSec((now - programStart) / 1000);
+      if (progress < 1) { animationRef.current = requestAnimationFrame(frame); return; }
+      from = [...targetAngles];
+      segmentIndex += 1;
+      if (segmentIndex >= points.length) {
+        animationRef.current = null; setPlaying(false); setPlayStep(points.length); return;
+      }
+      progress = 0; setPlayStep(segmentIndex + 1);
+      animationRef.current = requestAnimationFrame(frame);
+    };
+    animationRef.current = requestAnimationFrame(frame);
+  };
   const share = async () => {
     const url = `${location.origin}${location.pathname}#layout=${encodeLayout(layout)}`;
     await navigator.clipboard.writeText(url);
@@ -161,7 +230,13 @@ export default function V2App() {
         </details>
         <details open><summary>教示点 / 軌跡</summary>
           <button className="v2-action accent" onClick={addPoint}>＋ 現在位置を教示</button>
-          <div className="v2-points">{teachPoints.length === 0 && <p>教示点はまだありません。</p>}{teachPoints.map(point => <div key={point.id}><button onClick={() => recall(point)}><b>{point.name}</b><span>X {Math.round(worldValue(point.position, 0) * 1000)} Y {Math.round(worldValue(point.position, 1) * 1000)} Z {Math.round(worldValue(point.position, 2) * 1000)}</span></button><button aria-label={`${point.name}を削除`} onClick={() => setTeachPoints(items => items.filter(item => item.id !== point.id))}>×</button></div>)}</div>
+          <div className="v2-program">
+            <label><span>速度オーバーライド</span><input aria-label="速度オーバーライド" type="range" min="1" max="100" step="1" value={overridePercent} onChange={event => setOverridePercent(Number(event.target.value))} /><span className="v2-override-number"><input aria-label="速度オーバーライド数値" type="number" min="1" max="100" value={overridePercent} onChange={event => setOverridePercent(Math.min(100, Math.max(1, Number(event.target.value))))} /><small>%</small></span></label>
+            <div className="v2-program-time"><span><small>推定所要時間</small><b>{estimateProgramSeconds(angles, overridePercent).toFixed(2)} 秒</b></span><span><small>{playing ? `動作中 P${playStep}` : '経過時間'}</small><b>{elapsedSec.toFixed(2)} 秒</b></span>{playing && <span><small>開始時予定</small><b>{plannedSec.toFixed(2)} 秒</b></span>}</div>
+            <div className="v2-program-buttons"><button className="play" disabled={playing || playablePoints.length === 0} onClick={playProgram}>▶ 連続動作</button><button className="stop" disabled={!playing} onClick={stopProgram}>■ 停止</button></div>
+            <p>公式軸速度上限とオーバーライドから算出したシミュレーション値です。加減速を含む実機時間とは異なります。</p>
+          </div>
+          <div className="v2-points">{teachPoints.length === 0 && <p>教示点はまだありません。</p>}{teachPoints.map(point => { const seconds = pointEstimatedSeconds(point); return <div key={point.id} className={point.angles ? '' : 'legacy'}><button onClick={() => recall(point)}><b>{point.name}{point.angles ? '' : '（旧形式）'}</b><span>X {Math.round(worldValue(point.position, 0) * 1000)} Y {Math.round(worldValue(point.position, 1) * 1000)} Z {Math.round(worldValue(point.position, 2) * 1000)}</span>{point.angles && <small>J: {point.angles.map(value => value.toFixed(1)).join(' / ')}°{seconds !== null ? `　区間 ${seconds.toFixed(2)}秒` : ''}</small>}</button><button aria-label={`${point.name}を削除`} onClick={() => setTeachPoints(items => items.filter(item => item.id !== point.id))}>×</button></div>; })}</div>
         </details>
         <details><summary>共有 / 保存</summary>
           <div className="v2-actions"><button onClick={share}>共有URLをコピー</button><button onClick={download}>JSON保存</button><button onClick={() => layoutRef.current?.click()}>JSON読込</button></div>
