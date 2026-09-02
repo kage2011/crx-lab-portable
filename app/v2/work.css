@@ -29,3 +29,54 @@
 .v2-select-field select:focus {
   outline: 1px solid #1aa990;
 }
+
+.v2-joint-controls > label {
+  display: grid;
+  grid-template-columns: 90px 1fr 76px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid #d4ddd9;
+}
+
+.v2-joint-controls > label > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v2-joint-controls b {
+  color: #139b84;
+  font: bold 12px monospace;
+}
+
+.v2-joint-controls small {
+  color: #7b8a8e;
+  font: 7px monospace;
+}
+
+.v2-joint-controls > label > input {
+  width: 100%;
+  accent-color: #13b99b;
+}
+
+.v2-joint-number {
+  display: flex;
+  align-items: center;
+  border: 1px solid #b8c7c1;
+  background: #fff;
+}
+
+.v2-joint-number input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: 10px monospace;
+}
+
+.v2-joint-number small {
+  padding-right: 5px;
+}

@@ -19,6 +19,7 @@ type Props = {
   basePosition: [number, number, number];
   mode: 'translate' | 'rotate';
   poseCommand: (Pose & { nonce: number }) | null;
+  jointCommand: { angles: number[]; nonce: number } | null;
   teachPoints: TeachPoint[];
   onJoints: (angles: number[]) => void;
   onPose: (pose: Pose) => void;
@@ -31,7 +32,7 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
 export default function V2Viewport(props: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const latest = useRef(props);
-  const runtime = useRef<{ target: THREE.Object3D; controls: TransformControls; solve: () => void } | null>(null);
+  const runtime = useRef<{ target: THREE.Object3D; controls: TransformControls; solve: () => void; setJoints: (angles: number[]) => void } | null>(null);
   latest.current = props;
 
   useEffect(() => {
@@ -155,8 +156,18 @@ export default function V2Viewport(props: Props) {
       latest.current.onIk(result);
       latest.current.onPose(readPose());
     };
+    const setJointAngles = (nextAngles: number[]) => {
+      angles = nextAngles.map((value, index) => THREE.MathUtils.clamp(value, latest.current.model.lower[index], latest.current.model.upper[index]));
+      setAngles(robot.joints, angles);
+      endpoint.updateWorldMatrix(true, false);
+      endpoint.getWorldPosition(target.position);
+      endpoint.getWorldQuaternion(target.quaternion);
+      latest.current.onJoints([...angles]);
+      latest.current.onPose(readPose());
+      latest.current.onIk({ angles: [...angles], positionErrorMm: 0, rotationErrorDeg: 0, reachable: true });
+    };
     transform.addEventListener('objectChange', runIk);
-    runtime.current = { target, controls: transform, solve: runIk };
+    runtime.current = { target, controls: transform, solve: runIk, setJoints: setJointAngles };
     runIk();
 
     let frame = 0;
@@ -211,6 +222,11 @@ export default function V2Viewport(props: Props) {
     runtime.current.target.quaternion.set(...command.quaternion);
     runtime.current.solve();
   }, [props.poseCommand]);
+
+  useEffect(() => {
+    if (!props.jointCommand || !runtime.current) return;
+    runtime.current.setJoints(props.jointCommand.angles);
+  }, [props.jointCommand]);
 
   return <div className="v2-viewport" ref={mountRef} />;
 }

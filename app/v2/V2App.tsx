@@ -39,6 +39,7 @@ export default function V2App() {
   const [teachPoints, setTeachPoints] = useState<TeachPoint[]>(restored?.teachPoints || []);
   const [pose, setPose] = useState<Pose>(defaultPose);
   const [poseCommand, setPoseCommand] = useState<(Pose & { nonce: number }) | null>(null);
+  const [jointCommand, setJointCommand] = useState<{ angles: number[]; nonce: number } | null>(null);
   const [mode, setMode] = useState<'translate' | 'rotate'>('translate');
   const [angles, setAngles] = useState(defaultIk.angles);
   const [ik, setIk] = useState(defaultIk);
@@ -64,6 +65,11 @@ export default function V2App() {
     setPoseCommand(next);
   };
   const addPoint = () => setTeachPoints(points => [...points, { ...pose, id: crypto.randomUUID(), name: `P${String(points.length + 1).padStart(2, '0')}` }]);
+  const moveJoint = (index: number, value: number) => {
+    const next = angles.map((angle, i) => i === index ? Math.min(model.upper[i], Math.max(model.lower[i], value)) : angle);
+    setAngles(next);
+    setJointCommand({ angles: next, nonce: Date.now() + Math.random() });
+  };
   const recall = (point: TeachPoint) => setPoseCommand({ position: point.position, quaternion: point.quaternion, nonce: Date.now() });
   const share = async () => {
     const url = `${location.origin}${location.pathname}#layout=${encodeLayout(layout)}`;
@@ -101,7 +107,7 @@ export default function V2App() {
     </header>
     <section className="v2-workspace">
       <div className="v2-stage">
-        <V2Viewport model={model} tool={tool} cad={cad} workHeightMm={workHeightMm} workSettings={work} basePosition={basePosition} mode={mode} poseCommand={poseCommand} teachPoints={teachPoints} onJoints={setAngles} onPose={setPose} onIk={setIk} onCollision={setCollisions} />
+        <V2Viewport model={model} tool={tool} cad={cad} workHeightMm={workHeightMm} workSettings={work} basePosition={basePosition} mode={mode} poseCommand={poseCommand} jointCommand={jointCommand} teachPoints={teachPoints} onJoints={setAngles} onPose={setPose} onIk={setIk} onCollision={setCollisions} />
         <div className="v2-stage-copy"><span>DIGITAL MOCK-UP / {model.name}</span><strong>セル構想を、届く形に。</strong><small>球を選び、軸をドラッグ。移動は姿勢固定、回転はTCP中心です。</small></div>
         <div className="v2-stage-tools"><button className={mode === 'translate' ? 'active' : ''} onClick={() => setMode('translate')}>↔ 位置移動</button><button className={mode === 'rotate' ? 'active' : ''} onClick={() => setMode('rotate')}>⟳ 向き移動</button></div>
         <div className="v2-readout"><b>TCP</b> X {(worldValue(pose.position, 0) * 1000).toFixed(0)} / Y {(worldValue(pose.position, 1) * 1000).toFixed(0)} / Z {(worldValue(pose.position, 2) * 1000).toFixed(0)} mm<br />誤差 {ik.positionErrorMm.toFixed(1)} mm / {ik.rotationErrorDeg.toFixed(1)}°</div>
@@ -146,7 +152,7 @@ export default function V2App() {
           <input ref={layoutRef} hidden type="file" accept="application/json,.json" onChange={event => event.target.files?.[0] && importLayout(event.target.files[0])} />
           <p>ロボット、ツール、配置、教示点を共有します。CAD本体は含みません。</p>
         </details>
-        <details><summary>軸角度</summary><div className="v2-joints">{angles.map((angle, i) => <span key={i}><b>J{i + 1}</b>{angle.toFixed(1)}°</span>)}</div></details>
+        <details open><summary>軸角度 / 個別移動</summary><div className="v2-joint-controls">{angles.map((angle, i) => <label key={i}><span><b>J{i + 1}</b><small>{model.lower[i].toFixed(1)}° ～ {model.upper[i].toFixed(1)}°</small></span><input type="range" min={model.lower[i]} max={model.upper[i]} step="0.1" value={angle} onChange={event => moveJoint(i, Number(event.target.value))} /><span className="v2-joint-number"><input aria-label={`J${i + 1}角度`} type="number" min={model.lower[i]} max={model.upper[i]} step="0.1" value={Number(angle.toFixed(1))} onChange={event => moveJoint(i, Number(event.target.value))} /><small>°</small></span></label>)}</div></details>
         <p className="v2-disclaimer">構想検討用プロトタイプ。到達性・干渉結果は参考値であり、実機の安全検証には使用できません。</p>
       </aside>
     </section>
