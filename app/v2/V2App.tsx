@@ -50,6 +50,19 @@ export default function V2App() {
   const layoutRef = useRef<HTMLInputElement>(null);
   const model = ROBOTS.find(item => item.id === modelId) || ROBOTS[1];
   const layout: SavedLayout = { modelId, tool, work, workHeightMm, basePosition, teachPoints };
+  const jointLimits = angles.map((angle, index) => {
+    const lower = model.lower[index];
+    const upper = model.upper[index];
+    const range = upper - lower;
+    const lowerMargin = Math.max(0, angle - lower);
+    const upperMargin = Math.max(0, upper - angle);
+    const margin = Math.min(lowerMargin, upperMargin);
+    const usage = Math.min(100, Math.max(0, (1 - margin / (range / 2)) * 100));
+    const side = lowerMargin <= upperMargin ? '下限' : '上限';
+    const level = margin <= .2 ? 'limit' : usage >= 85 ? 'warning' : 'normal';
+    return { angle, lower, upper, margin, usage, side, level };
+  });
+  const tightestJoint = jointLimits.reduce((tightest, item, index) => item.margin < tightest.item.margin ? { item, index } : tightest, { item: jointLimits[0], index: 0 });
 
   useEffect(() => { localStorage.setItem('crx-v2-layout', JSON.stringify(layout)); }, [modelId, tool, work, workHeightMm, basePosition, teachPoints]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 2400); return () => clearTimeout(timer); }, [toast]);
@@ -137,6 +150,8 @@ export default function V2App() {
         <details open><summary>到達性 / 干渉</summary>
           <div className={`v2-alert ${ik.reachable ? 'safe' : 'danger'}`}><b>{ik.reachable ? 'この姿勢に到達できます' : 'この姿勢には到達できません'}</b><span>位置誤差 {ik.positionErrorMm.toFixed(1)} mm　姿勢誤差 {ik.rotationErrorDeg.toFixed(1)}°</span></div>
           <div className={`v2-alert ${collisions.length ? 'danger' : 'safe'}`}><b>{collisions.length ? collisions.join(' / ') : '簡易干渉なし'}</b><span>床・ワーク・CAD・自己干渉のAABB概算</span></div>
+          <div className={`v2-limit-summary ${tightestJoint.item.level}`}><b>軸制限：最小余裕 J{tightestJoint.index + 1}</b><span>{tightestJoint.item.side}まで {tightestJoint.item.margin.toFixed(1)}°　制限使用率 {tightestJoint.item.usage.toFixed(0)}%</span></div>
+          <div className="v2-limit-grid">{jointLimits.map((item, index) => <span key={index} className={item.level}><b>J{index + 1}</b><small>{item.angle.toFixed(1)}°</small><em>{item.side}まで {item.margin.toFixed(1)}°</em><i>{item.usage.toFixed(0)}%</i></span>)}</div>
         </details>
         <details><summary>CAD配置（STL / OBJ）</summary>
           <input ref={fileRef} hidden type="file" accept=".stl,.obj" onChange={event => event.target.files?.[0] && importCad(event.target.files[0])} />
@@ -152,7 +167,7 @@ export default function V2App() {
           <input ref={layoutRef} hidden type="file" accept="application/json,.json" onChange={event => event.target.files?.[0] && importLayout(event.target.files[0])} />
           <p>ロボット、ツール、配置、教示点を共有します。CAD本体は含みません。</p>
         </details>
-        <details open><summary>軸角度 / 個別移動</summary><div className="v2-joint-controls">{angles.map((angle, i) => <label key={i}><span><b>J{i + 1}</b><small>{model.lower[i].toFixed(1)}° ～ {model.upper[i].toFixed(1)}°</small></span><input type="range" min={model.lower[i]} max={model.upper[i]} step="0.1" value={angle} onChange={event => moveJoint(i, Number(event.target.value))} /><span className="v2-joint-number"><input aria-label={`J${i + 1}角度`} type="number" min={model.lower[i]} max={model.upper[i]} step="0.1" value={Number(angle.toFixed(1))} onChange={event => moveJoint(i, Number(event.target.value))} /><small>°</small></span></label>)}</div></details>
+        <details open><summary>軸角度 / 個別移動</summary><div className="v2-joint-controls">{angles.map((angle, i) => <label key={i} className={jointLimits[i].level}><span><b>J{i + 1}<em>{jointLimits[i].level === 'limit' ? '制限到達' : jointLimits[i].level === 'warning' ? '制限注意' : '正常'}</em></b><small>可動 {model.lower[i].toFixed(1)}° ～ {model.upper[i].toFixed(1)}°</small><small>{jointLimits[i].side}まで残り {jointLimits[i].margin.toFixed(1)}° / 使用率 {jointLimits[i].usage.toFixed(0)}%</small></span><input type="range" min={model.lower[i]} max={model.upper[i]} step="0.1" value={angle} onChange={event => moveJoint(i, Number(event.target.value))} /><span className="v2-joint-number"><input aria-label={`J${i + 1}角度`} type="number" min={model.lower[i]} max={model.upper[i]} step="0.1" value={Number(angle.toFixed(1))} onChange={event => moveJoint(i, Number(event.target.value))} /><small>°</small></span></label>)}</div></details>
         <p className="v2-disclaimer">構想検討用プロトタイプ。到達性・干渉結果は参考値であり、実機の安全検証には使用できません。</p>
       </aside>
     </section>

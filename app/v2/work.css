@@ -32,7 +32,7 @@
 
 .v2-joint-controls > label {
   display: grid;
-  grid-template-columns: 90px 1fr 76px;
+  grid-template-columns: 150px 1fr 76px;
   align-items: center;
   gap: 8px;
   padding: 7px 0;
@@ -48,6 +48,25 @@
 .v2-joint-controls b {
   color: #139b84;
   font: bold 12px monospace;
+}
+
+.v2-joint-controls b em {
+  margin-left: 6px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  background: #dce8e3;
+  color: #52645e;
+  font: normal 7px sans-serif;
+}
+
+.v2-joint-controls label.warning b em {
+  background: #fff0bd;
+  color: #8b6500;
+}
+
+.v2-joint-controls label.limit b em {
+  background: #f7d6d2;
+  color: #a52d27;
 }
 
 .v2-joint-controls small {
@@ -79,4 +98,66 @@
 
 .v2-joint-number small {
   padding-right: 5px;
+}
+
+.v2-limit-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 8px 0 5px;
+  padding: 9px;
+  border-left: 3px solid #2aaa82;
+  background: #e1eee9;
+}
+
+.v2-limit-summary.warning {
+  border-color: #e2a900;
+  background: #fff2c9;
+}
+
+.v2-limit-summary.limit {
+  border-color: #e5534b;
+  background: #f7dedb;
+}
+
+.v2-limit-summary b {
+  font-size: 9px;
+}
+
+.v2-limit-summary span {
+  color: #65777d;
+  font: 8px monospace;
+}
+
+.v2-limit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.v2-limit-grid > span {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 5px;
+  padding: 6px;
+  border: 1px solid #cad7d1;
+  background: #fff;
+}
+
+.v2-limit-grid b,
+.v2-limit-grid small,
+.v2-limit-grid em,
+.v2-limit-grid i {
+  font: 8px monospace;
+}
+
+.v2-limit-grid b { color: #15967f; font-weight: bold; }
+.v2-limit-grid small { text-align: right; }
+.v2-limit-grid em { color: #65777d; font-style: normal; }
+.v2-limit-grid i { color: #65777d; font-style: normal; text-align: right; }
+.v2-limit-grid > span.warning { border-color: #e2b634; background: #fff8df; }
+.v2-limit-grid > span.limit { border-color: #e26e67; background: #fbe9e7; }
+
+@media (max-width: 500px) {
+  .v2-joint-controls > label { grid-template-columns: 125px 1fr 70px; }
 }
