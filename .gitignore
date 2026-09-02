@@ -7,3 +7,5 @@ next-env.d.ts
 *.log
 .env*
 !.env.example
+.vendor/
+pages-dist/

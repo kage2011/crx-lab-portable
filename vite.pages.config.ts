@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/postcss';
 import { defineConfig } from 'vite';
+import { resolve } from 'node:path';
 
 export default defineConfig(() => {
   const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1];
@@ -17,6 +18,12 @@ export default defineConfig(() => {
     build: {
       outDir: 'pages-dist',
       emptyOutDir: true,
+      rollupOptions: {
+        input: {
+          main: resolve(process.cwd(), 'index.html'),
+          v2: resolve(process.cwd(), 'v2/index.html'),
+        },
+      },
     },
   };
 });
