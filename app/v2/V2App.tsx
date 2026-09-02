@@ -53,8 +53,11 @@ export default function V2App() {
 
   const setToolValue = (key: keyof ToolSettings, value: number) => setTool(current => ({ ...current, [key]: value }));
   const setBase = (index: number, valueMm: number) => setBasePosition(current => current.map((value, i) => i === index ? valueMm / 1000 : value) as Vec3Tuple);
+  const sceneIndex = (worldIndex: number) => [0, 2, 1][worldIndex];
+  const worldValue = (position: Vec3Tuple, worldIndex: number) => position[sceneIndex(worldIndex)];
   const setTcp = (index: number, valueMm: number) => {
-    const next: Pose & { nonce: number } = { ...pose, position: pose.position.map((value, i) => i === index ? valueMm / 1000 : value) as Vec3Tuple, nonce: Date.now() };
+    const mappedIndex = sceneIndex(index);
+    const next: Pose & { nonce: number } = { ...pose, position: pose.position.map((value, i) => i === mappedIndex ? valueMm / 1000 : value) as Vec3Tuple, nonce: Date.now() };
     setPoseCommand(next);
   };
   const addPoint = () => setTeachPoints(points => [...points, { ...pose, id: crypto.randomUUID(), name: `P${String(points.length + 1).padStart(2, '0')}` }]);
@@ -98,7 +101,7 @@ export default function V2App() {
         <V2Viewport model={model} tool={tool} cad={cad} workHeightMm={workHeightMm} basePosition={basePosition} mode={mode} poseCommand={poseCommand} teachPoints={teachPoints} onJoints={setAngles} onPose={setPose} onIk={setIk} onCollision={setCollisions} />
         <div className="v2-stage-copy"><span>DIGITAL MOCK-UP / {model.name}</span><strong>セル構想を、届く形に。</strong><small>球を選び、軸をドラッグ。移動は姿勢固定、回転はTCP中心です。</small></div>
         <div className="v2-stage-tools"><button className={mode === 'translate' ? 'active' : ''} onClick={() => setMode('translate')}>↔ 位置移動</button><button className={mode === 'rotate' ? 'active' : ''} onClick={() => setMode('rotate')}>⟳ 向き移動</button></div>
-        <div className="v2-readout"><b>TCP</b> X {(pose.position[0] * 1000).toFixed(0)} / Y {(pose.position[1] * 1000).toFixed(0)} / Z {(pose.position[2] * 1000).toFixed(0)} mm<br />誤差 {ik.positionErrorMm.toFixed(1)} mm / {ik.rotationErrorDeg.toFixed(1)}°</div>
+        <div className="v2-readout"><b>TCP</b> X {(worldValue(pose.position, 0) * 1000).toFixed(0)} / Y {(worldValue(pose.position, 1) * 1000).toFixed(0)} / Z {(worldValue(pose.position, 2) * 1000).toFixed(0)} mm<br />誤差 {ik.positionErrorMm.toFixed(1)} mm / {ik.rotationErrorDeg.toFixed(1)}°</div>
       </div>
       <aside className="v2-panel">
         <section className="v2-primary">
@@ -106,7 +109,7 @@ export default function V2App() {
           <div><span><small>可搬質量</small><b>{model.payload}</b></span><span><small>最大リーチ</small><b>{model.reach}</b></span></div>
         </section>
         <details open><summary>TCP位置 / ロボット設置</summary>
-          <h3>TCP ワールド座標</h3><div className="v2-grid3">{(['X', 'Y', 'Z'] as const).map((axis, i) => <NumberField key={axis} label={axis} value={Math.round(pose.position[i] * 1000)} onChange={value => setTcp(i, value)} />)}</div>
+          <h3>TCP ワールド座標</h3><div className="v2-grid3">{(['X', 'Y', 'Z'] as const).map((axis, i) => <NumberField key={axis} label={axis} value={Math.round(worldValue(pose.position, i) * 1000)} onChange={value => setTcp(i, value)} />)}</div>
           <h3>ロボット取付面中心</h3><div className="v2-grid3">{(['X', 'Y', 'Z'] as const).map((axis, i) => <NumberField key={axis} label={axis} value={Math.round(basePosition[i] * 1000)} onChange={value => setBase(i, value)} />)}</div>
           <NumberField label="ワーク床上高さ" value={workHeightMm} onChange={setWorkHeightMm} />
         </details>
@@ -126,7 +129,7 @@ export default function V2App() {
         </details>
         <details open><summary>教示点 / 軌跡</summary>
           <button className="v2-action accent" onClick={addPoint}>＋ 現在位置を教示</button>
-          <div className="v2-points">{teachPoints.length === 0 && <p>教示点はまだありません。</p>}{teachPoints.map(point => <div key={point.id}><button onClick={() => recall(point)}><b>{point.name}</b><span>X {Math.round(point.position[0] * 1000)} Y {Math.round(point.position[1] * 1000)} Z {Math.round(point.position[2] * 1000)}</span></button><button aria-label={`${point.name}を削除`} onClick={() => setTeachPoints(items => items.filter(item => item.id !== point.id))}>×</button></div>)}</div>
+          <div className="v2-points">{teachPoints.length === 0 && <p>教示点はまだありません。</p>}{teachPoints.map(point => <div key={point.id}><button onClick={() => recall(point)}><b>{point.name}</b><span>X {Math.round(worldValue(point.position, 0) * 1000)} Y {Math.round(worldValue(point.position, 1) * 1000)} Z {Math.round(worldValue(point.position, 2) * 1000)}</span></button><button aria-label={`${point.name}を削除`} onClick={() => setTeachPoints(items => items.filter(item => item.id !== point.id))}>×</button></div>)}</div>
         </details>
         <details><summary>共有 / 保存</summary>
           <div className="v2-actions"><button onClick={share}>共有URLをコピー</button><button onClick={download}>JSON保存</button><button onClick={() => layoutRef.current?.click()}>JSON読込</button></div>

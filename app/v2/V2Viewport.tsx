@@ -40,8 +40,9 @@ export default function V2Viewport(props: Props) {
     scene.background = new THREE.Color('#08131a');
     scene.fog = new THREE.Fog('#08131a', 4, 10);
     const camera = new THREE.PerspectiveCamera(42, mount.clientWidth / mount.clientHeight, .01, 30);
-    camera.position.set(3.4, -4.2, 2.7);
-    camera.up.set(0, 0, 1);
+    const reachMeters = parseInt(latest.current.model.reach.replace(/\D/g, ''), 10) / 1000;
+    const viewScale = reachMeters / 1.418;
+    camera.position.set(3.2 * viewScale, 2.35 * viewScale, -4.2 * viewScale);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
@@ -54,14 +55,14 @@ export default function V2Viewport(props: Props) {
     scene.add(key);
 
     const grid = new THREE.GridHelper(8, 40, '#2f7180', '#163841');
-    grid.rotation.x = Math.PI / 2;
     scene.add(grid);
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(8, 8, .04), new THREE.MeshStandardMaterial({ color: '#101f26', roughness: .9 }));
-    floor.position.z = -.04;
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(8, .04, 8), new THREE.MeshStandardMaterial({ color: '#101f26', roughness: .9 }));
+    floor.position.y = -.04;
     floor.receiveShadow = true;
     scene.add(floor);
 
     const base = new THREE.Group();
+    base.rotation.x = -Math.PI / 2;
     scene.add(base);
     const robot = buildRobot(base, latest.current.model);
     const initial = [0, -18, 72, 0, 38, 0];
@@ -72,6 +73,8 @@ export default function V2Viewport(props: Props) {
     const attachMesh = (file: string, parent: THREE.Group) => loader.load(`${basePath}/models/${latest.current.model.assetDir}/${file}.dae`, result => {
       if (!result) return;
       const object = result.scene;
+      object.rotation.set(0, 0, 0);
+      object.updateMatrix();
       object.traverse((child: THREE.Object3D) => { if ((child as THREE.Mesh).isMesh) { const mesh = child as THREE.Mesh; mesh.castShadow = true; mesh.receiveShadow = true; } });
       parent.add(object);
     });
@@ -100,7 +103,7 @@ export default function V2Viewport(props: Props) {
     target.add(axes);
 
     const orbit = new OrbitControls(camera, renderer.domElement);
-    orbit.target.set(.45, 0, .75);
+    orbit.target.set(.35 * viewScale, reachMeters * .55, 0);
     orbit.enableDamping = true;
     const transform = new TransformControls(camera, renderer.domElement);
     transform.setSize(.8);
@@ -109,7 +112,9 @@ export default function V2Viewport(props: Props) {
     transform.addEventListener('dragging-changed', event => { orbit.enabled = event.value !== true; });
 
     const work = new THREE.Mesh(new THREE.BoxGeometry(.6, .6, .22), new THREE.MeshStandardMaterial({ color: '#e7ece9', roughness: .75 }));
-    work.position.set(.75, .35, latest.current.workHeightMm / 1000 + .11);
+    work.geometry.dispose();
+    work.geometry = new THREE.BoxGeometry(.6, .22, .6);
+    work.position.set(.75, latest.current.workHeightMm / 1000 + .11, .35);
     work.castShadow = true;
     scene.add(work);
 
@@ -129,9 +134,9 @@ export default function V2Viewport(props: Props) {
       });
     }
 
-    const envelope = new THREE.Mesh(new THREE.SphereGeometry(parseInt(latest.current.model.reach.replace(/\D/g, ''), 10) / 1000, 28, 14), new THREE.MeshBasicMaterial({ color: '#2ca5bb', wireframe: true, transparent: true, opacity: .08 }));
+    const envelope = new THREE.Mesh(new THREE.SphereGeometry(reachMeters, 28, 14), new THREE.MeshBasicMaterial({ color: '#2ca5bb', wireframe: true, transparent: true, opacity: .08 }));
     envelope.position.z = latest.current.model.lengths[0];
-    scene.add(envelope);
+    base.add(envelope);
 
     const pathGeometry = new THREE.BufferGeometry();
     const path = new THREE.Line(pathGeometry, new THREE.LineBasicMaterial({ color: '#ffd449' }));
@@ -155,11 +160,11 @@ export default function V2Viewport(props: Props) {
     const animate = () => {
       animation = requestAnimationFrame(animate);
       transform.setMode(latest.current.mode);
-      base.position.set(...latest.current.basePosition);
-      work.position.z = latest.current.workHeightMm / 1000 + .11;
+      base.position.set(latest.current.basePosition[0], latest.current.basePosition[2], latest.current.basePosition[1]);
+      work.position.y = latest.current.workHeightMm / 1000 + .11;
       if (cadObject && latest.current.cad) {
         const c = latest.current.cad;
-        cadObject.position.set(...c.position);
+        cadObject.position.set(c.position[0], c.position[2], c.position[1]);
         cadObject.rotation.set(...c.rotation.map(THREE.MathUtils.degToRad) as [number, number, number]);
         cadObject.scale.setScalar(c.scale);
       }
@@ -171,7 +176,7 @@ export default function V2Viewport(props: Props) {
         const cadBox = cadObject ? new THREE.Box3().setFromObject(cadObject) : null;
         const boxes = robot.meshHolders.map(holder => new THREE.Box3().setFromObject(holder));
         boxes.forEach((box, i) => {
-          if (box.min.z < -.006) collisions.push(`J${i + 1} / 床`);
+          if (box.min.y < -.006) collisions.push(`J${i + 1} / 床`);
           if (box.intersectsBox(workBox)) collisions.push(`J${i + 1} / ワーク`);
           if (cadBox && box.intersectsBox(cadBox)) collisions.push(`J${i + 1} / CAD`);
           for (let j = i + 3; j < boxes.length; j++) if (box.intersectsBox(boxes[j])) collisions.push(`J${i + 1} / J${j + 1}`);
