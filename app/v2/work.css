@@ -1,0 +1,31 @@
+.v2-select-row {
+  margin: 5px 0 10px;
+}
+
+.v2-select-row label,
+.v2-select-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #65777d;
+  font: 9px monospace;
+}
+
+.v2-select-row select,
+.v2-select-field select {
+  width: 100%;
+  padding: 8px 6px;
+  border: 1px solid #b8c7c1;
+  background: #fff;
+  color: #102027;
+  font: 11px monospace;
+}
+
+.v2-select-field {
+  margin: 6px 0;
+}
+
+.v2-select-row select:focus,
+.v2-select-field select:focus {
+  outline: 1px solid #1aa990;
+}

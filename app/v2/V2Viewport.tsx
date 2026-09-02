@@ -8,13 +8,14 @@ import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { buildRobot, setAngles, solveIk, type IkResult } from './kinematics';
-import type { CadSettings, Pose, RobotPreset, TeachPoint, ToolSettings } from './types';
+import type { CadSettings, Pose, RobotPreset, TeachPoint, ToolSettings, WorkSettings } from './types';
 
 type Props = {
   model: RobotPreset;
   tool: ToolSettings;
   cad: CadSettings | null;
   workHeightMm: number;
+  workSettings: WorkSettings;
   basePosition: [number, number, number];
   mode: 'translate' | 'rotate';
   poseCommand: (Pose & { nonce: number }) | null;
@@ -111,10 +112,14 @@ export default function V2Viewport(props: Props) {
     scene.add(transform.getHelper());
     transform.addEventListener('dragging-changed', event => { orbit.enabled = event.value !== true; });
 
-    const work = new THREE.Mesh(new THREE.BoxGeometry(.6, .6, .22), new THREE.MeshStandardMaterial({ color: '#e7ece9', roughness: .75 }));
-    work.geometry.dispose();
-    work.geometry = new THREE.BoxGeometry(.6, .22, .6);
-    work.position.set(.75, latest.current.workHeightMm / 1000 + .11, .35);
+    const ws = latest.current.workSettings;
+    const workGeometry = ws.shape === 'cylinder'
+      ? new THREE.CylinderGeometry(ws.diameterMm / 2000, ws.diameterMm / 2000, ws.lengthMm / 1000, 32)
+      : new THREE.BoxGeometry(ws.widthMm / 1000, ws.heightMm / 1000, ws.depthMm / 1000);
+    const work = new THREE.Mesh(workGeometry, new THREE.MeshStandardMaterial({ color: '#e7ece9', roughness: .75 }));
+    if (ws.shape === 'cylinder') work.rotation[ws.axis === 'x' ? 'z' : 'x'] = Math.PI / 2;
+    const workHalfHeight = (ws.shape === 'cylinder' ? ws.diameterMm : ws.heightMm) / 2000;
+    work.position.set(.75, latest.current.workHeightMm / 1000 + workHalfHeight, .35);
     work.castShadow = true;
     scene.add(work);
 
@@ -145,8 +150,7 @@ export default function V2Viewport(props: Props) {
     const readPose = (): Pose => ({ position: target.position.toArray() as [number, number, number], quaternion: target.quaternion.toArray() as [number, number, number, number] });
     const runIk = () => {
       const result = solveIk(robot.joints, endpoint, target.position, target.quaternion, angles, latest.current.model);
-      if (result.reachable) angles = result.angles;
-      else setAngles(robot.joints, angles);
+      angles = result.angles;
       latest.current.onJoints([...angles]);
       latest.current.onIk(result);
       latest.current.onPose(readPose());
@@ -161,7 +165,7 @@ export default function V2Viewport(props: Props) {
       animation = requestAnimationFrame(animate);
       transform.setMode(latest.current.mode);
       base.position.set(latest.current.basePosition[0], latest.current.basePosition[2], latest.current.basePosition[1]);
-      work.position.y = latest.current.workHeightMm / 1000 + .11;
+      work.position.y = latest.current.workHeightMm / 1000 + workHalfHeight;
       if (cadObject && latest.current.cad) {
         const c = latest.current.cad;
         cadObject.position.set(c.position[0], c.position[2], c.position[1]);
@@ -198,7 +202,7 @@ export default function V2Viewport(props: Props) {
       renderer.dispose();
       mount.replaceChildren();
     };
-  }, [props.model.id, props.tool.lengthMm, props.tool.rx, props.tool.ry, props.tool.rz, props.cad?.url]);
+  }, [props.model.id, props.tool.lengthMm, props.tool.rx, props.tool.ry, props.tool.rz, props.cad?.url, props.workSettings.shape, props.workSettings.diameterMm, props.workSettings.lengthMm, props.workSettings.axis, props.workSettings.widthMm, props.workSettings.depthMm, props.workSettings.heightMm]);
 
   useEffect(() => {
     const command = props.poseCommand;

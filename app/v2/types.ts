@@ -15,6 +15,15 @@ export type RobotPreset = {
 export type Pose = { position: Vec3Tuple; quaternion: [number, number, number, number] };
 export type TeachPoint = Pose & { id: string; name: string };
 export type ToolSettings = { lengthMm: number; rx: number; ry: number; rz: number };
+export type WorkSettings = {
+  shape: 'cylinder' | 'box';
+  diameterMm: number;
+  lengthMm: number;
+  axis: 'x' | 'y';
+  widthMm: number;
+  depthMm: number;
+  heightMm: number;
+};
 export type CadSettings = { url: string; name: string; kind: 'stl' | 'obj'; position: Vec3Tuple; rotation: Vec3Tuple; scale: number };
 
 export const ROBOTS: RobotPreset[] = [

@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import V2Viewport from './V2Viewport';
 import type { IkResult } from './kinematics';
-import { ROBOTS, type CadSettings, type Pose, type TeachPoint, type ToolSettings, type Vec3Tuple } from './types';
+import { ROBOTS, type CadSettings, type Pose, type TeachPoint, type ToolSettings, type Vec3Tuple, type WorkSettings } from './types';
 import './v2.css';
+import './work.css';
 
-type SavedLayout = { modelId: string; tool: ToolSettings; workHeightMm: number; basePosition: Vec3Tuple; teachPoints: TeachPoint[] };
+type SavedLayout = { modelId: string; tool: ToolSettings; work?: WorkSettings; workHeightMm: number; basePosition: Vec3Tuple; teachPoints: TeachPoint[] };
 const defaultPose: Pose = { position: [.7, 0, .8], quaternion: [0, 0, 0, 1] };
 const defaultIk: IkResult = { angles: [0, 0, 0, 0, 0, 0], positionErrorMm: 0, rotationErrorDeg: 0, reachable: true };
 
@@ -33,6 +34,7 @@ export default function V2App() {
   const [modelId, setModelId] = useState(restored?.modelId || 'crx20ia_l');
   const [tool, setTool] = useState<ToolSettings>(restored?.tool || { lengthMm: 100, rx: 0, ry: 0, rz: 0 });
   const [workHeightMm, setWorkHeightMm] = useState(restored?.workHeightMm ?? 0);
+  const [work, setWork] = useState<WorkSettings>(restored?.work || { shape: 'cylinder', diameterMm: 30, lengthMm: 300, axis: 'y', widthMm: 300, depthMm: 300, heightMm: 220 });
   const [basePosition, setBasePosition] = useState<Vec3Tuple>(restored?.basePosition || [0, 0, 0]);
   const [teachPoints, setTeachPoints] = useState<TeachPoint[]>(restored?.teachPoints || []);
   const [pose, setPose] = useState<Pose>(defaultPose);
@@ -46,12 +48,13 @@ export default function V2App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const layoutRef = useRef<HTMLInputElement>(null);
   const model = ROBOTS.find(item => item.id === modelId) || ROBOTS[1];
-  const layout: SavedLayout = { modelId, tool, workHeightMm, basePosition, teachPoints };
+  const layout: SavedLayout = { modelId, tool, work, workHeightMm, basePosition, teachPoints };
 
-  useEffect(() => { localStorage.setItem('crx-v2-layout', JSON.stringify(layout)); }, [modelId, tool, workHeightMm, basePosition, teachPoints]);
+  useEffect(() => { localStorage.setItem('crx-v2-layout', JSON.stringify(layout)); }, [modelId, tool, work, workHeightMm, basePosition, teachPoints]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 2400); return () => clearTimeout(timer); }, [toast]);
 
   const setToolValue = (key: keyof ToolSettings, value: number) => setTool(current => ({ ...current, [key]: value }));
+  const setWorkValue = <K extends keyof WorkSettings>(key: K, value: WorkSettings[K]) => setWork(current => ({ ...current, [key]: value }));
   const setBase = (index: number, valueMm: number) => setBasePosition(current => current.map((value, i) => i === index ? valueMm / 1000 : value) as Vec3Tuple);
   const sceneIndex = (worldIndex: number) => [0, 2, 1][worldIndex];
   const worldValue = (position: Vec3Tuple, worldIndex: number) => position[sceneIndex(worldIndex)];
@@ -79,7 +82,7 @@ export default function V2App() {
     try {
       const next = JSON.parse(await file.text()) as SavedLayout;
       if (!ROBOTS.some(item => item.id === next.modelId) || !Array.isArray(next.teachPoints)) throw new Error();
-      setModelId(next.modelId); setTool(next.tool); setWorkHeightMm(next.workHeightMm); setBasePosition(next.basePosition); setTeachPoints(next.teachPoints);
+      setModelId(next.modelId); setTool(next.tool); if (next.work) setWork(next.work); setWorkHeightMm(next.workHeightMm); setBasePosition(next.basePosition); setTeachPoints(next.teachPoints);
       setToast('レイアウトを読み込みました');
     } catch { setToast('レイアウトファイルを読めません'); }
   };
@@ -98,7 +101,7 @@ export default function V2App() {
     </header>
     <section className="v2-workspace">
       <div className="v2-stage">
-        <V2Viewport model={model} tool={tool} cad={cad} workHeightMm={workHeightMm} basePosition={basePosition} mode={mode} poseCommand={poseCommand} teachPoints={teachPoints} onJoints={setAngles} onPose={setPose} onIk={setIk} onCollision={setCollisions} />
+        <V2Viewport model={model} tool={tool} cad={cad} workHeightMm={workHeightMm} workSettings={work} basePosition={basePosition} mode={mode} poseCommand={poseCommand} teachPoints={teachPoints} onJoints={setAngles} onPose={setPose} onIk={setIk} onCollision={setCollisions} />
         <div className="v2-stage-copy"><span>DIGITAL MOCK-UP / {model.name}</span><strong>セル構想を、届く形に。</strong><small>球を選び、軸をドラッグ。移動は姿勢固定、回転はTCP中心です。</small></div>
         <div className="v2-stage-tools"><button className={mode === 'translate' ? 'active' : ''} onClick={() => setMode('translate')}>↔ 位置移動</button><button className={mode === 'rotate' ? 'active' : ''} onClick={() => setMode('rotate')}>⟳ 向き移動</button></div>
         <div className="v2-readout"><b>TCP</b> X {(worldValue(pose.position, 0) * 1000).toFixed(0)} / Y {(worldValue(pose.position, 1) * 1000).toFixed(0)} / Z {(worldValue(pose.position, 2) * 1000).toFixed(0)} mm<br />誤差 {ik.positionErrorMm.toFixed(1)} mm / {ik.rotationErrorDeg.toFixed(1)}°</div>
@@ -112,6 +115,13 @@ export default function V2App() {
           <h3>TCP ワールド座標</h3><div className="v2-grid3">{(['X', 'Y', 'Z'] as const).map((axis, i) => <NumberField key={axis} label={axis} value={Math.round(worldValue(pose.position, i) * 1000)} onChange={value => setTcp(i, value)} />)}</div>
           <h3>ロボット取付面中心</h3><div className="v2-grid3">{(['X', 'Y', 'Z'] as const).map((axis, i) => <NumberField key={axis} label={axis} value={Math.round(basePosition[i] * 1000)} onChange={value => setBase(i, value)} />)}</div>
           <NumberField label="ワーク床上高さ" value={workHeightMm} onChange={setWorkHeightMm} />
+        </details>
+        <details open><summary>ワーク形状 / サイズ</summary>
+          <div className="v2-select-row"><label>形状<select value={work.shape} onChange={event => setWorkValue('shape', event.target.value as WorkSettings['shape'])}><option value="cylinder">横置き円筒</option><option value="box">直方体</option></select></label></div>
+          {work.shape === 'cylinder' ? <>
+            <div className="v2-grid3"><NumberField label="直径 φ" value={work.diameterMm} onChange={value => setWorkValue('diameterMm', Math.max(1, value))} /><NumberField label="長さ" value={work.lengthMm} onChange={value => setWorkValue('lengthMm', Math.max(1, value))} /><label className="v2-select-field"><span>長手方向</span><select value={work.axis} onChange={event => setWorkValue('axis', event.target.value as WorkSettings['axis'])}><option value="x">X方向</option><option value="y">Y方向</option></select></label></div>
+            <p>初期値は、ご指定の横置き円筒 φ30 × 300 mmです。</p>
+          </> : <div className="v2-grid3"><NumberField label="X幅" value={work.widthMm} onChange={value => setWorkValue('widthMm', Math.max(1, value))} /><NumberField label="Y奥行" value={work.depthMm} onChange={value => setWorkValue('depthMm', Math.max(1, value))} /><NumberField label="Z高さ" value={work.heightMm} onChange={value => setWorkValue('heightMm', Math.max(1, value))} /></div>}
         </details>
         <details open><summary>ツール設定</summary>
           <NumberField label="ツール長" value={tool.lengthMm} onChange={value => setToolValue('lengthMm', Math.max(1, value))} />
