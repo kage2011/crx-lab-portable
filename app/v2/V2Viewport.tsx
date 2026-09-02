@@ -7,6 +7,7 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { OBB } from 'three/examples/jsm/math/OBB.js';
 import { buildRobot, setAngles, solveIk, type IkResult } from './kinematics';
 import type { CadSettings, Pose, RobotPreset, TeachPoint, ToolSettings, WorkSettings } from './types';
 
@@ -172,6 +173,37 @@ export default function V2Viewport(props: Props) {
 
     let frame = 0;
     let animation = 0;
+    const objectObbs = (object: THREE.Object3D | null) => {
+      const result: OBB[] = [];
+      if (!object) return result;
+      object.updateWorldMatrix(true, true);
+      object.traverse(child => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.geometry) return;
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        const box = mesh.geometry.boundingBox;
+        if (!box || box.isEmpty()) return;
+        result.push(new OBB().fromBox3(box).applyMatrix4(mesh.matrixWorld));
+      });
+      return result;
+    };
+    const obbSetsIntersect = (first: OBB[], second: OBB[]) => first.some(a => second.some(b => a.intersectsOBB(b, 1e-5)));
+    const objectMinVertexY = (object: THREE.Object3D) => {
+      let minimum = Infinity;
+      const vertex = new THREE.Vector3();
+      object.updateWorldMatrix(true, true);
+      object.traverse(child => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.geometry) return;
+        const positions = mesh.geometry.getAttribute('position');
+        if (!positions) return;
+        for (let index = 0; index < positions.count; index++) {
+          vertex.fromBufferAttribute(positions, index).applyMatrix4(mesh.matrixWorld);
+          if (vertex.y < minimum) minimum = vertex.y;
+        }
+      });
+      return minimum;
+    };
     const animate = () => {
       animation = requestAnimationFrame(animate);
       transform.setMode(latest.current.mode);
@@ -187,14 +219,14 @@ export default function V2Viewport(props: Props) {
       pathGeometry.setFromPoints(points);
       if (++frame % 12 === 0) {
         const collisions: string[] = [];
-        const workBox = new THREE.Box3().setFromObject(work);
-        const cadBox = cadObject ? new THREE.Box3().setFromObject(cadObject) : null;
-        const boxes = robot.meshHolders.map(holder => new THREE.Box3().setFromObject(holder));
-        boxes.forEach((box, i) => {
-          if (box.min.y < -.006) collisions.push(`J${i + 1} / 床`);
-          if (box.intersectsBox(workBox)) collisions.push(`J${i + 1} / ワーク`);
-          if (cadBox && box.intersectsBox(cadBox)) collisions.push(`J${i + 1} / CAD`);
-          for (let j = i + 3; j < boxes.length; j++) if (box.intersectsBox(boxes[j])) collisions.push(`J${i + 1} / J${j + 1}`);
+        const workObbs = objectObbs(work);
+        const cadObbs = objectObbs(cadObject);
+        const linkObbs = robot.meshHolders.map(holder => objectObbs(holder));
+        linkObbs.forEach((obbs, i) => {
+          if (objectMinVertexY(robot.meshHolders[i]) < -.003) collisions.push(`J${i + 1} ↔ 床`);
+          if (obbSetsIntersect(obbs, workObbs)) collisions.push(`J${i + 1} ↔ ワーク`);
+          if (cadObbs.length && obbSetsIntersect(obbs, cadObbs)) collisions.push(`J${i + 1} ↔ CAD`);
+          for (let j = i + 3; j < linkObbs.length; j++) if (obbSetsIntersect(obbs, linkObbs[j])) collisions.push(`J${i + 1} ↔ J${j + 1}`);
         });
         latest.current.onCollision([...new Set(collisions)]);
       }
