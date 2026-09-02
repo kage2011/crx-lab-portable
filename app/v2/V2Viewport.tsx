@@ -164,7 +164,7 @@ export default function V2Viewport(props: Props) {
       endpoint.getWorldQuaternion(target.quaternion);
       latest.current.onJoints([...angles]);
       latest.current.onPose(readPose());
-      latest.current.onIk({ angles: [...angles], positionErrorMm: 0, rotationErrorDeg: 0, reachable: true });
+      latest.current.onIk({ angles: [...angles], positionErrorMm: 0, rotationErrorDeg: 0, positionReachable: true, orientationReachable: true, reachable: true });
     };
     transform.addEventListener('objectChange', runIk);
     runtime.current = { target, controls: transform, solve: runIk, setJoints: setJointAngles };

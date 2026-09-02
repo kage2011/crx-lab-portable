@@ -9,7 +9,7 @@ import './work.css';
 
 type SavedLayout = { modelId: string; tool: ToolSettings; work?: WorkSettings; workHeightMm: number; basePosition: Vec3Tuple; teachPoints: TeachPoint[] };
 const defaultPose: Pose = { position: [.7, 0, .8], quaternion: [0, 0, 0, 1] };
-const defaultIk: IkResult = { angles: [0, 0, 0, 0, 0, 0], positionErrorMm: 0, rotationErrorDeg: 0, reachable: true };
+const defaultIk: IkResult = { angles: [0, 0, 0, 0, 0, 0], positionErrorMm: 0, rotationErrorDeg: 0, positionReachable: true, orientationReachable: true, reachable: true };
 
 function encodeLayout(value: SavedLayout) {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
@@ -115,7 +115,7 @@ export default function V2App() {
   return <main className="v2-shell">
     <header className="v2-header">
       <div className="v2-brand"><b>CRX LAB</b><span>PLANNING STUDIO</span><em>V2 PROTOTYPE</em></div>
-      <div className="v2-header-status"><span className={ik.reachable ? 'ok' : 'ng'}>{ik.reachable ? '到達可能' : '到達不可'}</span><span className={collisions.length ? 'ng' : 'ok'}>{collisions.length ? `干渉 ${collisions.length}` : '干渉なし'}</span></div>
+      <div className="v2-header-status"><span className={ik.reachable ? 'ok' : ik.positionReachable ? 'warn' : 'ng'}>{ik.reachable ? '位置・姿勢 到達' : ik.positionReachable ? '位置到達 / 姿勢未収束' : '位置 到達不可'}</span><span className={collisions.length ? 'ng' : 'ok'}>{collisions.length ? `干渉 ${collisions.length}` : '干渉なし'}</span></div>
       <a href={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/`}>現行版へ戻る</a>
     </header>
     <section className="v2-workspace">
@@ -148,7 +148,8 @@ export default function V2App() {
           <p>フランジ先端から+X方向。姿勢変更時もTCP中心点は固定します。</p>
         </details>
         <details open><summary>到達性 / 干渉</summary>
-          <div className={`v2-alert ${ik.reachable ? 'safe' : 'danger'}`}><b>{ik.reachable ? 'この姿勢に到達できます' : 'この姿勢には到達できません'}</b><span>位置誤差 {ik.positionErrorMm.toFixed(1)} mm　姿勢誤差 {ik.rotationErrorDeg.toFixed(1)}°</span></div>
+          <div className={`v2-alert ${ik.positionReachable ? 'safe' : 'danger'}`}><b>{ik.positionReachable ? '位置：到達' : '位置：到達不可'}</b><span>位置誤差 {ik.positionErrorMm.toFixed(1)} mm（判定基準 8 mm未満）</span></div>
+          <div className={`v2-alert ${ik.orientationReachable ? 'safe' : ik.positionReachable ? 'warning' : 'danger'}`}><b>{ik.orientationReachable ? '姿勢：収束' : '姿勢：未収束'}</b><span>姿勢誤差 {ik.rotationErrorDeg.toFixed(1)}°（判定基準 4°未満）</span></div>
           <div className={`v2-alert ${collisions.length ? 'danger' : 'safe'}`}><b>{collisions.length ? collisions.join(' / ') : '簡易干渉なし'}</b><span>床・ワーク・CAD・自己干渉のAABB概算</span></div>
           <div className={`v2-limit-summary ${tightestJoint.item.level}`}><b>軸制限：最小余裕 J{tightestJoint.index + 1}</b><span>{tightestJoint.item.side}まで {tightestJoint.item.margin.toFixed(1)}°　制限使用率 {tightestJoint.item.usage.toFixed(0)}%</span></div>
           <div className="v2-limit-grid">{jointLimits.map((item, index) => <span key={index} className={item.level}><b>J{index + 1}</b><small>{item.angle.toFixed(1)}°</small><em>{item.side}まで {item.margin.toFixed(1)}°</em><i>{item.usage.toFixed(0)}%</i></span>)}</div>

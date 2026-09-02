@@ -161,3 +161,13 @@
 @media (max-width: 500px) {
   .v2-joint-controls > label { grid-template-columns: 125px 1fr 70px; }
 }
+
+.v2-header-status .warn {
+  color: #ffd15c;
+  border-color: #8c6b20;
+}
+
+.v2-alert.warning {
+  border-color: #e2a900;
+  background: #fff2c9;
+}
