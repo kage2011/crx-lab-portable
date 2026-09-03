@@ -21,6 +21,7 @@ type Props = {
   mode: 'translate' | 'rotate';
   poseCommand: (Pose & { nonce: number }) | null;
   jointCommand: { angles: number[]; nonce: number } | null;
+  initialAngles: number[];
   teachPoints: TeachPoint[];
   onJoints: (angles: number[]) => void;
   onPose: (pose: Pose) => void;
@@ -66,10 +67,10 @@ export default function V2Viewport(props: Props) {
 
     const base = new THREE.Group();
     base.rotation.x = -Math.PI / 2;
+    base.position.set(latest.current.basePosition[0], latest.current.basePosition[2], latest.current.basePosition[1]);
     scene.add(base);
     const robot = buildRobot(base, latest.current.model);
-    const initial = [0, -18, 72, 0, 38, 0];
-    let angles = initial.map((v, i) => THREE.MathUtils.clamp(v, latest.current.model.lower[i], latest.current.model.upper[i]));
+    let angles = latest.current.initialAngles.map((v, i) => THREE.MathUtils.clamp(v, latest.current.model.lower[i], latest.current.model.upper[i]));
     setAngles(robot.joints, angles);
 
     const loader = new ColladaLoader();
@@ -169,7 +170,7 @@ export default function V2Viewport(props: Props) {
     };
     transform.addEventListener('objectChange', runIk);
     runtime.current = { target, controls: transform, solve: runIk, setJoints: setJointAngles };
-    runIk();
+    setJointAngles(angles);
 
     let frame = 0;
     let animation = 0;

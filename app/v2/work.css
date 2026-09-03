@@ -257,3 +257,62 @@
 }
 
 .v2-points div.legacy { border-left: 3px solid #d6a82d; }
+
+.v2-points .v2-point {
+  display: block;
+  margin-top: 6px;
+  padding: 7px;
+  background: #fff;
+  border-left: 3px solid #1aa990;
+}
+
+.v2-points .v2-point.legacy { border-left-color: #d6a82d; }
+
+.v2-point-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.v2-point-head > input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid #b8c7c1;
+  color: #102027;
+  font: bold 10px monospace;
+}
+
+.v2-point-order {
+  display: flex;
+  gap: 3px;
+}
+
+.v2-point-order button,
+.v2-points .v2-point-update {
+  border: 1px solid #b8c7c1;
+  background: #f4f7f5;
+  padding: 6px 8px;
+  color: #34484f;
+  text-align: center;
+}
+
+.v2-point-order button:disabled { opacity: .35; cursor: not-allowed; }
+
+.v2-points .v2-point-recall {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 5px;
+  padding: 7px;
+  background: #f7faf8;
+}
+
+.v2-points .v2-point-update {
+  width: 100%;
+  margin-top: 4px;
+  border-color: #8db9ae;
+  color: #087a67;
+  font-weight: bold;
+}

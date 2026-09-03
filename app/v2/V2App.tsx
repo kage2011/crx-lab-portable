@@ -7,9 +7,12 @@ import { ROBOTS, type CadSettings, type Pose, type TeachPoint, type ToolSettings
 import './v2.css';
 import './work.css';
 
-type SavedLayout = { modelId: string; tool: ToolSettings; work?: WorkSettings; workHeightMm: number; basePosition: Vec3Tuple; teachPoints: TeachPoint[] };
+type CadPlacement = Pick<CadSettings, 'position' | 'rotation' | 'scale'>;
+type SavedLayout = { modelId: string; tool: ToolSettings; work?: WorkSettings; workHeightMm: number; basePosition: Vec3Tuple; teachPoints: TeachPoint[]; angles?: number[]; cadPlacement?: CadPlacement };
 const defaultPose: Pose = { position: [.7, 0, .8], quaternion: [0, 0, 0, 1] };
 const defaultIk: IkResult = { angles: [0, 0, 0, 0, 0, 0], positionErrorMm: 0, rotationErrorDeg: 0, positionReachable: true, orientationReachable: true, reachable: true };
+const defaultAngles = [0, -18, 72, 0, 38, 0];
+const defaultCadPlacement: CadPlacement = { position: [.65, -.3, 0], rotation: [0, 0, 0], scale: .001 };
 
 function encodeLayout(value: SavedLayout) {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
@@ -31,6 +34,7 @@ function NumberField({ label, value, unit = 'mm', step = 1, onChange }: { label:
 
 export default function V2App() {
   const restored = useMemo(() => decodeLayout(location.hash.replace(/^#layout=/, '')) || (() => { try { return JSON.parse(localStorage.getItem('crx-v2-layout') || 'null') as SavedLayout | null; } catch { return null; } })(), []);
+  const restoredAngles = restored?.angles?.length === 6 ? restored.angles : defaultAngles;
   const [modelId, setModelId] = useState(restored?.modelId || 'crx20ia_l');
   const [tool, setTool] = useState<ToolSettings>(restored?.tool || { lengthMm: 100, rx: 0, ry: 0, rz: 0 });
   const [workHeightMm, setWorkHeightMm] = useState(restored?.workHeightMm ?? 0);
@@ -41,10 +45,11 @@ export default function V2App() {
   const [poseCommand, setPoseCommand] = useState<(Pose & { nonce: number }) | null>(null);
   const [jointCommand, setJointCommand] = useState<{ angles: number[]; nonce: number } | null>(null);
   const [mode, setMode] = useState<'translate' | 'rotate'>('translate');
-  const [angles, setAngles] = useState(defaultIk.angles);
-  const [ik, setIk] = useState(defaultIk);
+  const [angles, setAngles] = useState([...restoredAngles]);
+  const [ik, setIk] = useState<IkResult>({ ...defaultIk, angles: [...restoredAngles] });
   const [collisions, setCollisions] = useState<string[]>([]);
   const [cad, setCad] = useState<CadSettings | null>(null);
+  const [cadPlacement, setCadPlacement] = useState<CadPlacement>(restored?.cadPlacement || defaultCadPlacement);
   const [toast, setToast] = useState('');
   const [overridePercent, setOverridePercent] = useState(25);
   const [playing, setPlaying] = useState(false);
@@ -57,7 +62,7 @@ export default function V2App() {
   const overrideRef = useRef(overridePercent);
   overrideRef.current = overridePercent;
   const model = ROBOTS.find(item => item.id === modelId) || ROBOTS[1];
-  const layout: SavedLayout = { modelId, tool, work, workHeightMm, basePosition, teachPoints };
+  const layout: SavedLayout = { modelId, tool, work, workHeightMm, basePosition, teachPoints, angles, cadPlacement };
   const jointLimits = angles.map((angle, index) => {
     const lower = model.lower[index];
     const upper = model.upper[index];
@@ -72,7 +77,10 @@ export default function V2App() {
   });
   const tightestJoint = jointLimits.reduce((tightest, item, index) => item.margin < tightest.item.margin ? { item, index } : tightest, { item: jointLimits[0], index: 0 });
 
-  useEffect(() => { localStorage.setItem('crx-v2-layout', JSON.stringify(layout)); }, [modelId, tool, work, workHeightMm, basePosition, teachPoints]);
+  useEffect(() => {
+    const timer = setTimeout(() => localStorage.setItem('crx-v2-layout', JSON.stringify(layout)), 160);
+    return () => clearTimeout(timer);
+  }, [modelId, tool, work, workHeightMm, basePosition, teachPoints, angles, cadPlacement]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 2400); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => () => { if (animationRef.current !== null) cancelAnimationFrame(animationRef.current); }, []);
 
@@ -120,6 +128,21 @@ export default function V2App() {
     if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
     animationRef.current = null;
     setPlaying(false);
+  };
+  const updatePoint = (point: TeachPoint) => {
+    stopProgram();
+    setTeachPoints(items => items.map(item => item.id === point.id ? { ...pose, id: item.id, name: item.name, angles: [...angles], modelId } : item));
+    setToast(`${point.name}を現在姿勢で更新しました`);
+  };
+  const movePoint = (index: number, offset: -1 | 1) => {
+    stopProgram();
+    setTeachPoints(items => {
+      const destination = index + offset;
+      if (destination < 0 || destination >= items.length) return items;
+      const next = [...items];
+      [next[index], next[destination]] = [next[destination], next[index]];
+      return next;
+    });
   };
   const playProgram = () => {
     stopProgram();
@@ -171,6 +194,11 @@ export default function V2App() {
       const next = JSON.parse(await file.text()) as SavedLayout;
       if (!ROBOTS.some(item => item.id === next.modelId) || !Array.isArray(next.teachPoints)) throw new Error();
       setModelId(next.modelId); setTool(next.tool); if (next.work) setWork(next.work); setWorkHeightMm(next.workHeightMm); setBasePosition(next.basePosition); setTeachPoints(next.teachPoints);
+      if (next.angles?.length === 6) { setAngles([...next.angles]); setJointCommand({ angles: [...next.angles], nonce: Date.now() }); }
+      if (next.cadPlacement) {
+        setCadPlacement(next.cadPlacement);
+        setCad(current => current ? { ...current, ...next.cadPlacement } : current);
+      }
       setToast('レイアウトを読み込みました');
     } catch { setToast('レイアウトファイルを読めません'); }
   };
@@ -178,7 +206,12 @@ export default function V2App() {
     const ext = file.name.split('.').pop()?.toLowerCase();
     if (ext !== 'stl' && ext !== 'obj') { setToast('STLまたはOBJを選択してください'); return; }
     if (cad) URL.revokeObjectURL(cad.url);
-    setCad({ url: URL.createObjectURL(file), name: file.name, kind: ext, position: [.65, -.3, 0], rotation: [0, 0, 0], scale: ext === 'stl' ? .001 : 1 });
+    const placement = { ...cadPlacement, scale: cadPlacement.scale || (ext === 'stl' ? .001 : 1) };
+    setCad({ url: URL.createObjectURL(file), name: file.name, kind: ext, ...placement });
+  };
+  const updateCadPlacement = (patch: Partial<CadPlacement>) => {
+    setCadPlacement(current => ({ ...current, ...patch }));
+    setCad(current => current ? { ...current, ...patch } : current);
   };
 
   return <main className="v2-shell">
@@ -189,7 +222,7 @@ export default function V2App() {
     </header>
     <section className="v2-workspace">
       <div className="v2-stage">
-        <V2Viewport model={model} tool={tool} cad={cad} workHeightMm={workHeightMm} workSettings={work} basePosition={basePosition} mode={mode} poseCommand={poseCommand} jointCommand={jointCommand} teachPoints={teachPoints} onJoints={setAngles} onPose={setPose} onIk={setIk} onCollision={setCollisions} />
+        <V2Viewport model={model} tool={tool} cad={cad} workHeightMm={workHeightMm} workSettings={work} basePosition={basePosition} mode={mode} poseCommand={poseCommand} jointCommand={jointCommand} initialAngles={angles} teachPoints={teachPoints} onJoints={setAngles} onPose={setPose} onIk={setIk} onCollision={setCollisions} />
         <div className="v2-stage-copy"><span>DIGITAL MOCK-UP / {model.name}</span><strong>セル構想を、届く形に。</strong><small>球を選び、軸をドラッグ。移動は姿勢固定、回転はTCP中心です。</small></div>
         <div className="v2-stage-tools"><button className={mode === 'translate' ? 'active' : ''} onClick={() => setMode('translate')}>↔ 位置移動</button><button className={mode === 'rotate' ? 'active' : ''} onClick={() => setMode('rotate')}>⟳ 向き移動</button></div>
         <div className="v2-readout"><b>TCP</b> X {(worldValue(pose.position, 0) * 1000).toFixed(0)} / Y {(worldValue(pose.position, 1) * 1000).toFixed(0)} / Z {(worldValue(pose.position, 2) * 1000).toFixed(0)} mm<br />誤差 {ik.positionErrorMm.toFixed(1)} mm / {ik.rotationErrorDeg.toFixed(1)}°</div>
@@ -226,7 +259,7 @@ export default function V2App() {
         <details><summary>CAD配置（STL / OBJ）</summary>
           <input ref={fileRef} hidden type="file" accept=".stl,.obj" onChange={event => event.target.files?.[0] && importCad(event.target.files[0])} />
           <button className="v2-action" onClick={() => fileRef.current?.click()}>CADファイルを選択</button>
-          {cad && <><p className="v2-file">{cad.name}</p><div className="v2-grid3">{(['X', 'Y', 'Z'] as const).map((axis, i) => <NumberField key={axis} label={axis} value={Math.round(cad.position[i] * 1000)} onChange={value => setCad({ ...cad, position: cad.position.map((old, j) => i === j ? value / 1000 : old) as Vec3Tuple })} />)}</div><NumberField label="スケール" value={cad.scale} unit="倍" step={.001} onChange={value => setCad({ ...cad, scale: value })} /></>}
+          {cad && <><p className="v2-file">{cad.name}</p><h3>位置</h3><div className="v2-grid3">{(['X', 'Y', 'Z'] as const).map((axis, i) => <NumberField key={axis} label={axis} value={Math.round(cad.position[i] * 1000)} onChange={value => updateCadPlacement({ position: cad.position.map((old, j) => i === j ? value / 1000 : old) as Vec3Tuple })} />)}</div><h3>角度</h3><div className="v2-grid3">{(['RX', 'RY', 'RZ'] as const).map((axis, i) => <NumberField key={axis} label={axis} unit="°" value={cad.rotation[i]} onChange={value => updateCadPlacement({ rotation: cad.rotation.map((old, j) => i === j ? value : old) as Vec3Tuple })} />)}</div><NumberField label="スケール" value={cad.scale} unit="倍" step={.001} onChange={value => updateCadPlacement({ scale: Math.max(.000001, value) })} /></>}
         </details>
         <details open><summary>教示点 / 軌跡</summary>
           <button className="v2-action accent" onClick={addPoint}>＋ 現在位置を教示</button>
@@ -236,12 +269,12 @@ export default function V2App() {
             <div className="v2-program-buttons"><button className="play" disabled={playing || playablePoints.length === 0} onClick={playProgram}>▶ 連続動作</button><button className="stop" disabled={!playing} onClick={stopProgram}>■ 停止</button></div>
             <p>公式軸速度上限とオーバーライドから算出したシミュレーション値です。加減速を含む実機時間とは異なります。</p>
           </div>
-          <div className="v2-points">{teachPoints.length === 0 && <p>教示点はまだありません。</p>}{teachPoints.map(point => { const seconds = pointEstimatedSeconds(point); return <div key={point.id} className={point.angles ? '' : 'legacy'}><button onClick={() => recall(point)}><b>{point.name}{point.angles ? '' : '（旧形式）'}</b><span>X {Math.round(worldValue(point.position, 0) * 1000)} Y {Math.round(worldValue(point.position, 1) * 1000)} Z {Math.round(worldValue(point.position, 2) * 1000)}</span>{point.angles && <small>J: {point.angles.map(value => value.toFixed(1)).join(' / ')}°{seconds !== null ? `　区間 ${seconds.toFixed(2)}秒` : ''}</small>}</button><button aria-label={`${point.name}を削除`} onClick={() => setTeachPoints(items => items.filter(item => item.id !== point.id))}>×</button></div>; })}</div>
+          <div className="v2-points">{teachPoints.length === 0 && <p>教示点はまだありません。</p>}{teachPoints.map((point, index) => { const seconds = pointEstimatedSeconds(point); return <div key={point.id} className={`v2-point ${point.angles ? '' : 'legacy'}`}><div className="v2-point-head"><input aria-label={`${point.name}の名前`} value={point.name} onChange={event => setTeachPoints(items => items.map(item => item.id === point.id ? { ...item, name: event.target.value } : item))} /><span className="v2-point-order"><button aria-label={`${point.name}を上へ`} disabled={index === 0} onClick={() => movePoint(index, -1)}>↑</button><button aria-label={`${point.name}を下へ`} disabled={index === teachPoints.length - 1} onClick={() => movePoint(index, 1)}>↓</button><button aria-label={`${point.name}を削除`} onClick={() => { stopProgram(); setTeachPoints(items => items.filter(item => item.id !== point.id)); }}>×</button></span></div><button className="v2-point-recall" onClick={() => recall(point)}><span>X {Math.round(worldValue(point.position, 0) * 1000)} Y {Math.round(worldValue(point.position, 1) * 1000)} Z {Math.round(worldValue(point.position, 2) * 1000)}</span>{point.angles && <small>J: {point.angles.map(value => value.toFixed(1)).join(' / ')}°{seconds !== null ? `　区間 ${seconds.toFixed(2)}秒` : ''}</small>}{!point.angles && <small>旧形式：位置から復元</small>}</button><button className="v2-point-update" onClick={() => updatePoint(point)}>現在姿勢で更新</button></div>; })}</div>
         </details>
         <details><summary>共有 / 保存</summary>
           <div className="v2-actions"><button onClick={share}>共有URLをコピー</button><button onClick={download}>JSON保存</button><button onClick={() => layoutRef.current?.click()}>JSON読込</button></div>
           <input ref={layoutRef} hidden type="file" accept="application/json,.json" onChange={event => event.target.files?.[0] && importLayout(event.target.files[0])} />
-          <p>ロボット、ツール、配置、教示点を共有します。CAD本体は含みません。</p>
+          <p>現在の軸姿勢、ロボット、ツール、CAD配置、教示点を共有します。CAD本体は含みません。</p>
         </details>
         <details open><summary>軸角度 / 個別移動</summary><div className="v2-joint-controls">{angles.map((angle, i) => <label key={i} className={jointLimits[i].level}><span><b>J{i + 1}<em>{jointLimits[i].level === 'limit' ? '制限到達' : jointLimits[i].level === 'warning' ? '制限注意' : '正常'}</em></b><small>可動 {model.lower[i].toFixed(1)}° ～ {model.upper[i].toFixed(1)}°</small><small>{jointLimits[i].side}まで残り {jointLimits[i].margin.toFixed(1)}° / 使用率 {jointLimits[i].usage.toFixed(0)}%</small></span><input type="range" min={model.lower[i]} max={model.upper[i]} step="0.1" value={angle} onChange={event => moveJoint(i, Number(event.target.value))} /><span className="v2-joint-number"><input aria-label={`J${i + 1}角度`} type="number" min={model.lower[i]} max={model.upper[i]} step="0.1" value={Number(angle.toFixed(1))} onChange={event => moveJoint(i, Number(event.target.value))} /><small>°</small></span></label>)}</div></details>
         <p className="v2-disclaimer">構想検討用プロトタイプ。到達性・干渉結果は参考値であり、実機の安全検証には使用できません。</p>
