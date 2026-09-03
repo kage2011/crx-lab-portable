@@ -25,6 +25,7 @@ export type WorkSettings = {
   depthMm: number;
   heightMm: number;
 };
+export type WorkGripSettings = { mode: 'floor' | 'tool'; offsetMm: Vec3Tuple; rotationDeg: Vec3Tuple };
 export type CadSettings = { url: string; name: string; kind: 'stl' | 'obj'; position: Vec3Tuple; rotation: Vec3Tuple; scale: number };
 
 export const ROBOTS: RobotPreset[] = [

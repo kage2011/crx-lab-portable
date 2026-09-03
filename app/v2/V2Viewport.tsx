@@ -9,7 +9,7 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { OBB } from 'three/examples/jsm/math/OBB.js';
 import { buildRobot, setAngles, solveIk, type IkResult } from './kinematics';
-import type { CadSettings, Pose, RobotPreset, TeachPoint, ToolSettings, WorkSettings } from './types';
+import type { CadSettings, Pose, RobotPreset, TeachPoint, ToolSettings, WorkGripSettings, WorkSettings } from './types';
 
 type Props = {
   model: RobotPreset;
@@ -17,6 +17,7 @@ type Props = {
   cad: CadSettings | null;
   workHeightMm: number;
   workSettings: WorkSettings;
+  workGrip: WorkGripSettings;
   basePosition: [number, number, number];
   mode: 'translate' | 'rotate';
   poseCommand: (Pose & { nonce: number }) | null;
@@ -119,12 +120,21 @@ export default function V2Viewport(props: Props) {
     const workGeometry = ws.shape === 'cylinder'
       ? new THREE.CylinderGeometry(ws.diameterMm / 2000, ws.diameterMm / 2000, ws.lengthMm / 1000, 32)
       : new THREE.BoxGeometry(ws.widthMm / 1000, ws.heightMm / 1000, ws.depthMm / 1000);
+    const workHolder = new THREE.Group();
     const work = new THREE.Mesh(workGeometry, new THREE.MeshStandardMaterial({ color: '#e7ece9', roughness: .75 }));
     if (ws.shape === 'cylinder') work.rotation[ws.axis === 'x' ? 'z' : 'x'] = Math.PI / 2;
     const workHalfHeight = (ws.shape === 'cylinder' ? ws.diameterMm : ws.heightMm) / 2000;
-    work.position.set(0, latest.current.workHeightMm / 1000 + workHalfHeight, 0);
+    workHolder.add(work);
+    if (latest.current.workGrip.mode === 'tool') {
+      endpoint.add(workHolder);
+      const grip = latest.current.workGrip;
+      workHolder.position.set(grip.offsetMm[0] / 1000, grip.offsetMm[1] / 1000, grip.offsetMm[2] / 1000);
+      workHolder.rotation.set(...grip.rotationDeg.map(THREE.MathUtils.degToRad) as [number, number, number], 'XYZ');
+    } else {
+      scene.add(workHolder);
+      workHolder.position.set(0, latest.current.workHeightMm / 1000 + workHalfHeight, 0);
+    }
     work.castShadow = true;
-    scene.add(work);
 
     let cadObject: THREE.Object3D | null = null;
     if (latest.current.cad) {
@@ -209,7 +219,12 @@ export default function V2Viewport(props: Props) {
       animation = requestAnimationFrame(animate);
       transform.setMode(latest.current.mode);
       base.position.set(latest.current.basePosition[0], latest.current.basePosition[2], latest.current.basePosition[1]);
-      work.position.y = latest.current.workHeightMm / 1000 + workHalfHeight;
+      if (latest.current.workGrip.mode === 'floor') workHolder.position.y = latest.current.workHeightMm / 1000 + workHalfHeight;
+      else {
+        const grip = latest.current.workGrip;
+        workHolder.position.set(grip.offsetMm[0] / 1000, grip.offsetMm[1] / 1000, grip.offsetMm[2] / 1000);
+        workHolder.rotation.set(...grip.rotationDeg.map(THREE.MathUtils.degToRad) as [number, number, number], 'XYZ');
+      }
       if (cadObject && latest.current.cad) {
         const c = latest.current.cad;
         cadObject.position.set(c.position[0], c.position[2], c.position[1]);
@@ -225,7 +240,7 @@ export default function V2Viewport(props: Props) {
         const linkObbs = robot.meshHolders.map(holder => objectObbs(holder));
         linkObbs.forEach((obbs, i) => {
           if (objectMinVertexY(robot.meshHolders[i]) < -.003) collisions.push(`J${i + 1} ↔ 床`);
-          if (obbSetsIntersect(obbs, workObbs)) collisions.push(`J${i + 1} ↔ ワーク`);
+          if (obbSetsIntersect(obbs, workObbs) && !(latest.current.workGrip.mode === 'tool' && i === 5)) collisions.push(`J${i + 1} ↔ ワーク`);
           if (cadObbs.length && obbSetsIntersect(obbs, cadObbs)) collisions.push(`J${i + 1} ↔ CAD`);
           for (let j = i + 3; j < linkObbs.length; j++) if (obbSetsIntersect(obbs, linkObbs[j])) collisions.push(`J${i + 1} ↔ J${j + 1}`);
         });
@@ -246,7 +261,7 @@ export default function V2Viewport(props: Props) {
       renderer.dispose();
       mount.replaceChildren();
     };
-  }, [props.model.id, props.tool.lengthMm, props.tool.rx, props.tool.ry, props.tool.rz, props.cad?.url, props.workSettings.shape, props.workSettings.diameterMm, props.workSettings.lengthMm, props.workSettings.axis, props.workSettings.widthMm, props.workSettings.depthMm, props.workSettings.heightMm]);
+  }, [props.model.id, props.tool.lengthMm, props.tool.rx, props.tool.ry, props.tool.rz, props.cad?.url, props.workSettings.shape, props.workSettings.diameterMm, props.workSettings.lengthMm, props.workSettings.axis, props.workSettings.widthMm, props.workSettings.depthMm, props.workSettings.heightMm, props.workGrip.mode]);
 
   useEffect(() => {
     const command = props.poseCommand;

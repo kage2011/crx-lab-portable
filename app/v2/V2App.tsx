@@ -3,16 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import V2Viewport from './V2Viewport';
 import type { IkResult } from './kinematics';
-import { ROBOTS, type CadSettings, type Pose, type TeachPoint, type ToolSettings, type Vec3Tuple, type WorkSettings } from './types';
+import { ROBOTS, type CadSettings, type Pose, type TeachPoint, type ToolSettings, type Vec3Tuple, type WorkGripSettings, type WorkSettings } from './types';
 import './v2.css';
 import './work.css';
 
 type CadPlacement = Pick<CadSettings, 'position' | 'rotation' | 'scale'>;
-type SavedLayout = { modelId: string; tool: ToolSettings; work?: WorkSettings; workHeightMm: number; basePosition: Vec3Tuple; teachPoints: TeachPoint[]; angles?: number[]; cadPlacement?: CadPlacement };
+type SavedLayout = { modelId: string; tool: ToolSettings; work?: WorkSettings; workGrip?: WorkGripSettings; workHeightMm: number; basePosition: Vec3Tuple; teachPoints: TeachPoint[]; angles?: number[]; cadPlacement?: CadPlacement };
 const defaultPose: Pose = { position: [.7, 0, .8], quaternion: [0, 0, 0, 1] };
 const defaultIk: IkResult = { angles: [0, 0, 0, 0, 0, 0], positionErrorMm: 0, rotationErrorDeg: 0, positionReachable: true, orientationReachable: true, reachable: true };
 const defaultAngles = [0, -18, 72, 0, 38, 0];
 const defaultCadPlacement: CadPlacement = { position: [.65, -.3, 0], rotation: [0, 0, 0], scale: .001 };
+const defaultWorkGrip: WorkGripSettings = { mode: 'floor', offsetMm: [0, 0, 0], rotationDeg: [0, 0, 0] };
 
 function encodeLayout(value: SavedLayout) {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
@@ -28,8 +29,23 @@ function decodeLayout(value: string): SavedLayout | null {
   } catch { return null; }
 }
 
+function NumericInput({ value, step = 1, ariaLabel, onChange }: { value: number; step?: number; ariaLabel: string; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(Number.isFinite(value) ? value : 0));
+  const editing = useRef(false);
+  useEffect(() => { if (!editing.current) setDraft(String(Number.isFinite(value) ? value : 0)); }, [value]);
+  const change = (next: string) => {
+    const normalized = next.replace(/−/g, '-');
+    if (!/^-?(?:\d+)?(?:\.\d*)?$/.test(normalized)) return;
+    setDraft(normalized);
+    if (normalized === '' || normalized === '-' || normalized === '.' || normalized === '-.') return;
+    const parsed = Number(normalized);
+    if (Number.isFinite(parsed)) onChange(parsed);
+  };
+  return <input type="text" inputMode="decimal" aria-label={ariaLabel} data-step={step} value={draft} onFocus={() => { editing.current = true; }} onChange={event => change(event.target.value)} onBlur={() => { editing.current = false; setDraft(String(Number.isFinite(value) ? value : 0)); }} />;
+}
+
 function NumberField({ label, value, unit = 'mm', step = 1, onChange }: { label: string; value: number; unit?: string; step?: number; onChange: (value: number) => void }) {
-  return <label className="v2-number"><span>{label}</span><div><input type="number" step={step} value={Number.isFinite(value) ? value : 0} onChange={event => onChange(Number(event.target.value))} /><small>{unit}</small></div></label>;
+  return <label className="v2-number"><span>{label}</span><div><NumericInput ariaLabel={label} step={step} value={value} onChange={onChange} /><small>{unit}</small></div></label>;
 }
 
 export default function V2App() {
@@ -39,6 +55,7 @@ export default function V2App() {
   const [tool, setTool] = useState<ToolSettings>(restored?.tool || { lengthMm: 100, rx: 0, ry: 0, rz: 0 });
   const [workHeightMm, setWorkHeightMm] = useState(restored?.workHeightMm ?? 0);
   const [work, setWork] = useState<WorkSettings>(restored?.work || { shape: 'cylinder', diameterMm: 30, lengthMm: 300, axis: 'y', widthMm: 300, depthMm: 300, heightMm: 220 });
+  const [workGrip, setWorkGrip] = useState<WorkGripSettings>(restored?.workGrip || defaultWorkGrip);
   const [basePosition, setBasePosition] = useState<Vec3Tuple>(restored?.basePosition || [0, 0, 0]);
   const [teachPoints, setTeachPoints] = useState<TeachPoint[]>(restored?.teachPoints || []);
   const [pose, setPose] = useState<Pose>(defaultPose);
@@ -62,7 +79,7 @@ export default function V2App() {
   const overrideRef = useRef(overridePercent);
   overrideRef.current = overridePercent;
   const model = ROBOTS.find(item => item.id === modelId) || ROBOTS[1];
-  const layout: SavedLayout = { modelId, tool, work, workHeightMm, basePosition, teachPoints, angles, cadPlacement };
+  const layout: SavedLayout = { modelId, tool, work, workGrip, workHeightMm, basePosition, teachPoints, angles, cadPlacement };
   const jointLimits = angles.map((angle, index) => {
     const lower = model.lower[index];
     const upper = model.upper[index];
@@ -80,12 +97,13 @@ export default function V2App() {
   useEffect(() => {
     const timer = setTimeout(() => localStorage.setItem('crx-v2-layout', JSON.stringify(layout)), 160);
     return () => clearTimeout(timer);
-  }, [modelId, tool, work, workHeightMm, basePosition, teachPoints, angles, cadPlacement]);
+  }, [modelId, tool, work, workGrip, workHeightMm, basePosition, teachPoints, angles, cadPlacement]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 2400); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => () => { if (animationRef.current !== null) cancelAnimationFrame(animationRef.current); }, []);
 
   const setToolValue = (key: keyof ToolSettings, value: number) => setTool(current => ({ ...current, [key]: value }));
   const setWorkValue = <K extends keyof WorkSettings>(key: K, value: WorkSettings[K]) => setWork(current => ({ ...current, [key]: value }));
+  const setGripTuple = (key: 'offsetMm' | 'rotationDeg', index: number, value: number) => setWorkGrip(current => ({ ...current, [key]: current[key].map((old, i) => i === index ? value : old) as Vec3Tuple }));
   const setBase = (index: number, valueMm: number) => setBasePosition(current => current.map((value, i) => i === index ? valueMm / 1000 : value) as Vec3Tuple);
   const sceneIndex = (worldIndex: number) => [0, 2, 1][worldIndex];
   const worldValue = (position: Vec3Tuple, worldIndex: number) => position[sceneIndex(worldIndex)];
@@ -193,7 +211,7 @@ export default function V2App() {
     try {
       const next = JSON.parse(await file.text()) as SavedLayout;
       if (!ROBOTS.some(item => item.id === next.modelId) || !Array.isArray(next.teachPoints)) throw new Error();
-      setModelId(next.modelId); setTool(next.tool); if (next.work) setWork(next.work); setWorkHeightMm(next.workHeightMm); setBasePosition(next.basePosition); setTeachPoints(next.teachPoints);
+      setModelId(next.modelId); setTool(next.tool); if (next.work) setWork(next.work); if (next.workGrip) setWorkGrip(next.workGrip); setWorkHeightMm(next.workHeightMm); setBasePosition(next.basePosition); setTeachPoints(next.teachPoints);
       if (next.angles?.length === 6) { setAngles([...next.angles]); setJointCommand({ angles: [...next.angles], nonce: Date.now() }); }
       if (next.cadPlacement) {
         setCadPlacement(next.cadPlacement);
@@ -222,7 +240,7 @@ export default function V2App() {
     </header>
     <section className="v2-workspace">
       <div className="v2-stage">
-        <V2Viewport model={model} tool={tool} cad={cad} workHeightMm={workHeightMm} workSettings={work} basePosition={basePosition} mode={mode} poseCommand={poseCommand} jointCommand={jointCommand} initialAngles={angles} teachPoints={teachPoints} onJoints={setAngles} onPose={setPose} onIk={setIk} onCollision={setCollisions} />
+        <V2Viewport model={model} tool={tool} cad={cad} workHeightMm={workHeightMm} workSettings={work} workGrip={workGrip} basePosition={basePosition} mode={mode} poseCommand={poseCommand} jointCommand={jointCommand} initialAngles={angles} teachPoints={teachPoints} onJoints={setAngles} onPose={setPose} onIk={setIk} onCollision={setCollisions} />
         <div className="v2-stage-copy"><span>DIGITAL MOCK-UP / {model.name}</span><strong>セル構想を、届く形に。</strong><small>球を選び、軸をドラッグ。移動は姿勢固定、回転はTCP中心です。</small></div>
         <div className="v2-stage-tools"><button className={mode === 'translate' ? 'active' : ''} onClick={() => setMode('translate')}>↔ 位置移動</button><button className={mode === 'rotate' ? 'active' : ''} onClick={() => setMode('rotate')}>⟳ 向き移動</button></div>
         <div className="v2-readout"><b>TCP</b> X {(worldValue(pose.position, 0) * 1000).toFixed(0)} / Y {(worldValue(pose.position, 1) * 1000).toFixed(0)} / Z {(worldValue(pose.position, 2) * 1000).toFixed(0)} mm<br />誤差 {ik.positionErrorMm.toFixed(1)} mm / {ik.rotationErrorDeg.toFixed(1)}°</div>
@@ -238,11 +256,13 @@ export default function V2App() {
           <NumberField label="ワーク床上高さ" value={workHeightMm} onChange={setWorkHeightMm} />
         </details>
         <details open><summary>ワーク形状 / サイズ</summary>
+          <div className="v2-select-row"><label>設置状態<select value={workGrip.mode} onChange={event => setWorkGrip(current => ({ ...current, mode: event.target.value as WorkGripSettings['mode'] }))}><option value="floor">床に設置</option><option value="tool">ハンドで把持</option></select></label></div>
           <div className="v2-select-row"><label>形状<select value={work.shape} onChange={event => setWorkValue('shape', event.target.value as WorkSettings['shape'])}><option value="cylinder">横置き円筒</option><option value="box">直方体</option></select></label></div>
           {work.shape === 'cylinder' ? <>
             <div className="v2-grid3"><NumberField label="直径 φ" value={work.diameterMm} onChange={value => setWorkValue('diameterMm', Math.max(1, value))} /><NumberField label="長さ" value={work.lengthMm} onChange={value => setWorkValue('lengthMm', Math.max(1, value))} /><label className="v2-select-field"><span>長手方向</span><select value={work.axis} onChange={event => setWorkValue('axis', event.target.value as WorkSettings['axis'])}><option value="x">X方向</option><option value="y">Y方向</option></select></label></div>
             <p>初期値は、ご指定の横置き円筒 φ30 × 300 mmです。</p>
           </> : <div className="v2-grid3"><NumberField label="X幅" value={work.widthMm} onChange={value => setWorkValue('widthMm', Math.max(1, value))} /><NumberField label="Y奥行" value={work.depthMm} onChange={value => setWorkValue('depthMm', Math.max(1, value))} /><NumberField label="Z高さ" value={work.heightMm} onChange={value => setWorkValue('heightMm', Math.max(1, value))} /></div>}
+          {workGrip.mode === 'tool' && <div className="v2-grip-settings"><h3>TCPからの把持オフセット</h3><div className="v2-grid3">{(['X', 'Y', 'Z'] as const).map((axis, index) => <NumberField key={axis} label={axis} value={workGrip.offsetMm[index]} onChange={value => setGripTuple('offsetMm', index, value)} />)}</div><h3>TCP基準のワーク角度</h3><div className="v2-grid3">{(['RX', 'RY', 'RZ'] as const).map((axis, index) => <NumberField key={axis} label={axis} unit="°" value={workGrip.rotationDeg[index]} onChange={value => setGripTuple('rotationDeg', index, value)} />)}</div><p>TCPを中心にワークを固定し、ロボットの移動・教示動作へ追従します。</p></div>}
         </details>
         <details open><summary>ツール設定</summary>
           <NumberField label="ツール長" value={tool.lengthMm} onChange={value => setToolValue('lengthMm', Math.max(1, value))} />
@@ -276,7 +296,7 @@ export default function V2App() {
           <input ref={layoutRef} hidden type="file" accept="application/json,.json" onChange={event => event.target.files?.[0] && importLayout(event.target.files[0])} />
           <p>現在の軸姿勢、ロボット、ツール、CAD配置、教示点を共有します。CAD本体は含みません。</p>
         </details>
-        <details open><summary>軸角度 / 個別移動</summary><div className="v2-joint-controls">{angles.map((angle, i) => <label key={i} className={jointLimits[i].level}><span><b>J{i + 1}<em>{jointLimits[i].level === 'limit' ? '制限到達' : jointLimits[i].level === 'warning' ? '制限注意' : '正常'}</em></b><small>可動 {model.lower[i].toFixed(1)}° ～ {model.upper[i].toFixed(1)}°</small><small>{jointLimits[i].side}まで残り {jointLimits[i].margin.toFixed(1)}° / 使用率 {jointLimits[i].usage.toFixed(0)}%</small></span><input type="range" min={model.lower[i]} max={model.upper[i]} step="0.1" value={angle} onChange={event => moveJoint(i, Number(event.target.value))} /><span className="v2-joint-number"><input aria-label={`J${i + 1}角度`} type="number" min={model.lower[i]} max={model.upper[i]} step="0.1" value={Number(angle.toFixed(1))} onChange={event => moveJoint(i, Number(event.target.value))} /><small>°</small></span></label>)}</div></details>
+        <details open><summary>軸角度 / 個別移動</summary><div className="v2-joint-controls">{angles.map((angle, i) => <label key={i} className={jointLimits[i].level}><span><b>J{i + 1}<em>{jointLimits[i].level === 'limit' ? '制限到達' : jointLimits[i].level === 'warning' ? '制限注意' : '正常'}</em></b><small>可動 {model.lower[i].toFixed(1)}° ～ {model.upper[i].toFixed(1)}°</small><small>{jointLimits[i].side}まで残り {jointLimits[i].margin.toFixed(1)}° / 使用率 {jointLimits[i].usage.toFixed(0)}%</small></span><input type="range" min={model.lower[i]} max={model.upper[i]} step="0.1" value={angle} onChange={event => moveJoint(i, Number(event.target.value))} /><span className="v2-joint-number"><NumericInput ariaLabel={`J${i + 1}角度`} step={.1} value={Number(angle.toFixed(1))} onChange={value => moveJoint(i, value)} /><small>°</small></span></label>)}</div></details>
         <p className="v2-disclaimer">構想検討用プロトタイプ。到達性・干渉結果は参考値であり、実機の安全検証には使用できません。</p>
       </aside>
     </section>
